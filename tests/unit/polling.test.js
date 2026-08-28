@@ -83,7 +83,6 @@ const {
   pollPlanosJobs,
   isBusinessHours,
   computeAdaptiveInterval,
-  getCurrentFastInterval,
 } = require('../../src/jobs/polling');
 
 const config = require('../../src/config');

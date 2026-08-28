@@ -6,19 +6,26 @@ const { logger } = require('./utils/logger');
 const pkg = require('../package.json');
 
 const GRACEFUL_SHUTDOWN_FILE = path.join(__dirname, '../data/.last_graceful_shutdown');
-const RESTART_THRESHOLD_MS = 60000; // 60 seconds
 
+/**
+ * Detecta si el arranque sigue a un cierre no-graceful (crash) o no.
+ * El marcador se "consume" (se borra al leerlo) para que si el proceso
+ * posteriormente muere sin graceful shutdown, el siguiente arranque
+ * detecte crash por marcador ausente.
+ *
+ * @returns {boolean} true si no había marcador (crash o primer arranque)
+ */
 function isAutoRestart() {
   try {
     if (!fs.existsSync(GRACEFUL_SHUTDOWN_FILE)) {
-      return true; // No shutdown file = first start or crash
+      return true; // Sin marcador = primer arranque o crash
     }
-    const content = fs.readFileSync(GRACEFUL_SHUTDOWN_FILE, 'utf8');
-    const timestamp = parseInt(content, 10);
-    const elapsed = Date.now() - timestamp;
-    return elapsed > RESTART_THRESHOLD_MS; // If too much time passed, it's a crash/restart
+    // Marcador presente: el último cierre fue graceful. Se consume (borra)
+    // para no falsear el siguiente arranque si este proceso muere abrupto.
+    fs.unlinkSync(GRACEFUL_SHUTDOWN_FILE);
+    return false;
   } catch {
-    return true; // Error reading file = assume crash
+    return true; // Error leyendo el marcador = asumir crash
   }
 }
 
@@ -61,4 +68,4 @@ function printBanner() {
   }
 }
 
-module.exports = { printBanner };
+module.exports = { printBanner, isAutoRestart };

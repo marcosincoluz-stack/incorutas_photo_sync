@@ -96,7 +96,7 @@ const config = {
   LOCK_DURATION_MS: parseInt(process.env.LOCK_DURATION_MS, 10) || 60000,
   LIMITER_MAX: 1,
   LIMITER_DURATION_MS: 1000,
-  REMOVE_ON_MAX: 100,
+  REMOVE_ON_MAX: 20, // Jobs completados/fallidos retenidos en Redis (era 100; reduce uso de memoria Redis)
   RECENT_JOBS_MAX: 5,
   TELEGRAM_TIMEOUT_MS: 8000,
   MAX_FILE_SIZE_MB: parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 50,

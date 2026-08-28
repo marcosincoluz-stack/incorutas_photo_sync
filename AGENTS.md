@@ -9,8 +9,8 @@ Middleware Express que sincroniza fotos desde Supabase Storage a un servidor de 
 src/
   index.js              — Entry point: Express app, mounts routers + error handler + requestId + requestLogger + unhandledRejection
   config.js            — Env validation, startup checks, security warnings (sync fs OK here only)
-  banner.js             — ASCII banner + startup Telegram notification
-  shutdown.js           — Graceful shutdown: closeAllConnections → drain jobs → close Redis → persist metrics
+  banner.js             — ASCII banner + startup Telegram; detecta crash leyendo marcador (consume/borra si graceful)
+  shutdown.js           — Graceful shutdown: escribe marcador de cierre limpio → Telegram → closeAllConnections → drain jobs → close Redis → persist metrics
   routes/
     diagnostic.js      — GET /health (public, minimal), /status + /metrics (auth required, detailed)
     api.js              — GET /dashboard (5s cache), /config, /logs (5s cache), /failed-evidences (5s cache), /pending-planos (5s cache); POST /backfill (backpressure), /retry-failed/:jobId, /upload-plano/:jobId, /test-telegram
@@ -116,7 +116,9 @@ npm run backfill:dry     # Dry-run retroactive download
 | `--dev` flag removed | `NODE_ENV=development` only; no argv bypass |
 | `localStorage` → `sessionStorage` | Token cleared on tab close; no persistent credential leak |
 | `requestId` + `AsyncLocalStorage` | Every request gets `X-Request-Id` header + log correlation |
+| Graceful shutdown marker consumed on boot | Crash detection reads `data/.last_graceful_shutdown` once and deletes it; if the process later dies without graceful shutdown, next boot reports crash. Marker is written BEFORE Telegram shutdown notification so a hung API call never causes a false "crash". |
 | `requestLogger` middleware | HTTP request tracing with method/path/status/duration |
+| `sharp.cache` limited | `sharp.cache({ memory: 16, files: 0, items: 20 })` at downloader module load: prevents ~50MB+ internal cache accumulation with BullMQ worker. Guarded with typeof check for mocks. |
 | `cross-env` for dev script | Windows-compatible `NODE_ENV=development` |
 | Polling híbrido 2 timers | Timer rápido (30s) para approved (latencia imágenes), timer lento (5min) para paid+stale+planos. Reduce egress 70% sin afectar descarga. |
 | Webhook dedup via Redis SETNX | ~~Deprecated~~ Removed with webhook subsystem |
@@ -158,7 +160,7 @@ See `.env.example` for the full list. Critical vars:
 - **Framework**: Vitest (ESM-compatible)
 - **Runner**: `npm test` (single run) or `npm run test:watch`
 - **Coverage**: `npm run test:coverage` — includes `src/**/*.js`, excludes `src/public/**`
-- **Current count**: 301 tests across 25 files
+- **Current count**: 328 tests across 26 files
 - **Mocking strategy**: `injectMock` + `require.cache` pattern for CJS external modules (`bullmq`, `ioredis`); `vi.fn()` for simple mocks; integration tests spin up an actual Express server
 - **Pre-commit**: `husky` + `lint-staged` runs ESLint on `*.js` on every commit
 
@@ -166,7 +168,7 @@ See `.env.example` for the full list. Critical vars:
 
 Magic constants are centralized in `config.js`. Key exports beyond env vars:
 - `LIMITER_MAX`, `LIMITER_DURATION_MS` — BullMQ rate limiter
-- `REMOVE_ON_MAX`, `RECENT_JOBS_MAX` — Job retention
+- `REMOVE_ON_MAX` (default 20), `RECENT_JOBS_MAX` — Job retention
 - `TELEGRAM_TIMEOUT_MS` — Telegram API timeout
 - `DASHBOARD_CACHE_TTL_MS` — Dashboard response cache (5s)
 - `SECONDARY_CACHE_TTL_MS` — Cache for /dlq, /failed-evidences, /logs (5s)
@@ -238,7 +240,7 @@ Magic constants are centralized in `config.js`. Key exports beyond env vars:
 - `REDIS_PASSWORD` required in production; empty value triggers startup warning
 - Circuit breaker opens after 5 consecutive Supabase failures — jobs fail fast instead of hanging
 - Stalled jobs detected after 30s — automatically reprocessed by BullMQ
-- Graceful shutdown: 2s drain → `closeAllConnections()` → `stopPolling()` → 30s queue drain → Redis close → metrics persist → 35s force exit
+- Graceful shutdown: 2s drain → `closeAllConnections()` → `stopPolling()` → 30s queue drain → Redis close → metrics persist → write graceful-shutdown marker (before Telegram) → Telegram shutdown notify → 35s force exit
 - Polling híbrido: timer rápido cada 30s (`POLLING_INTERVAL_MS`) ejecuta `pollApprovedJobs` (latencia imágenes). Timer lento cada 5min (`SLOW_POLLING_INTERVAL_MS`) ejecuta `pollPaidJobs` + `pollStaleJobs` + `pollPlanosJobs`. Reduce egress 70%. No ports open to internet needed.
 - `POLLING_ENABLED=false` disables polling (useful for manual-only mode via `/backfill`)
 - Polling alerts via Telegram after 3 consecutive failures (`POLLING_FAILURE_ALERT_THRESHOLD`), with 5min cooldown (`POLLING_ALERT_COOLDOWN_MS`)

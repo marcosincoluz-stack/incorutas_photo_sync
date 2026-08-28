@@ -94,17 +94,7 @@ async function shutdownResources() {
     logger.error('Error durante el cierre de MetricsStore:', err);
   }
 
-  // Enviar notificación de apagado a Telegram
-  if (config.HAS_TELEGRAM) {
-    try {
-      const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
-      await notify.notifyShutdown('SIGTERM', uptimeSeconds);
-    } catch (err) {
-      logger.error('Error enviando notificación de apagado a Telegram:', err.message);
-    }
-  }
-
-  // Escribir timestamp de apagado graceful para detección de auto-restart
+  // Escribir marcador de apagado graceful ANTES de Telegram (si Telegram se cuelga, el marcador queda)
   try {
     const dataDir = path.dirname(GRACEFUL_SHUTDOWN_FILE);
     if (!fs.existsSync(dataDir)) {
@@ -113,6 +103,16 @@ async function shutdownResources() {
     fs.writeFileSync(GRACEFUL_SHUTDOWN_FILE, Date.now().toString(), 'utf8');
   } catch (err) {
     logger.error('Error escribiendo archivo de shutdown:', err.message);
+  }
+
+  // Enviar notificación de apagado a Telegram (no bloqueante para el marcador)
+  if (config.HAS_TELEGRAM) {
+    try {
+      const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+      await notify.notifyShutdown('SIGTERM', uptimeSeconds);
+    } catch (err) {
+      logger.error('Error enviando notificación de apagado a Telegram:', err.message);
+    }
   }
 
   logger.info('👋 Proceso finalizado.');

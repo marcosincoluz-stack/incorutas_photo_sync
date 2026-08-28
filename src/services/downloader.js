@@ -5,6 +5,11 @@ const config = require('../config');
 const { supabase } = require('./supabase');
 const { logger } = require('../utils/logger');
 const sharp = require('sharp');
+// Limitar la caché interna de sharp para no acumular memoria entre descargas (exif strip)
+// (guardado: en tests sharp puede estar mockeado sin .cache)
+if (typeof sharp.cache === 'function') {
+  sharp.cache({ memory: 16, files: 0, items: 20 });
+}
 const { sanitizeFilename, ensurePathWithinBase } = require('../utils/sanitize');
 const { isAllowedEvidenceExtension, validateFileContent } = require('../utils/image-validator');
 const { checkDiskSpace } = require('../utils/disk');
